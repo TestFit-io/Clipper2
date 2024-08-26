@@ -11,8 +11,6 @@
 #define CLIPPER_MINKOWSKI_H
 
 #include <cstdlib>
-#include <vector>
-#include <string>
 #include "clipper2/clipper.core.h"
 
 namespace Clipper2Lib

@@ -31,6 +31,11 @@ namespace Clipper2Lib {
 
   static const Rect64 invalid_rect = Rect64(false);
 
+#ifdef clipper2_custom_allocator
+  void* (*clipper2_malloc)(std::size_t n) = malloc;
+  void  (*clipper2_free)(void* p) = free;
+#endif
+
   // Every closed path (ie polygon) is made up of a series of vertices forming edge 
   // 'bounds' that alternate between ascending bounds (containing edges going up 
   // relative to the Y-axis) and descending bounds. 'Local Minima' refers to
@@ -283,7 +288,7 @@ namespace Clipper2Lib {
 
   inline OutPt* DuplicateOp(OutPt* op, bool insert_after)
   {
-    OutPt* result = new OutPt(op->pt, op->outrec);
+    OutPt* result = New<OutPt>(op->pt, op->outrec);
     if (insert_after)
     {
       result->next = op->next;
@@ -611,11 +616,11 @@ namespace Clipper2Lib {
     if ((VertexFlags::LocalMin & vert.flags) != VertexFlags::None) return;
 
     vert.flags = (vert.flags | VertexFlags::LocalMin);
-    list.push_back(std::make_unique <LocalMinima>(&vert, polytype, is_open));
+    list.push_back(MakeUnique<LocalMinima>(&vert, polytype, is_open));
   }
 
   void AddPaths_(const Paths64& paths, PathType polytype, bool is_open,
-    std::vector<Vertex*>& vertexLists, LocalMinimaList& locMinList)
+    VertexLists& vertexLists, LocalMinimaList& locMinList)
   {
     const auto total_vertex_count =
       std::accumulate(paths.begin(), paths.end(), size_t(0),
@@ -623,7 +628,8 @@ namespace Clipper2Lib {
         {return a + path.size(); });
     if (total_vertex_count == 0) return;
 
-    Vertex* vertices = new Vertex[total_vertex_count], * v = vertices;
+    VertexList vertices(total_vertex_count);
+    Vertex* v = vertices.list;
     for (const Path64& path : paths)
     {
       //for each path create a circular double linked list of vertices
@@ -715,7 +721,7 @@ namespace Clipper2Lib {
       }
     } // end processing current path
 
-    vertexLists.emplace_back(vertices);
+    vertexLists.emplace_back(std::move(vertices));
   }
 
   //------------------------------------------------------------------------------
@@ -728,7 +734,7 @@ namespace Clipper2Lib {
     if ((VertexFlags::LocalMin & vert.flags) != VertexFlags::None) return;
 
     vert.flags = (vert.flags | VertexFlags::LocalMin);
-    minima_list_.push_back(std::make_unique <LocalMinima>(&vert, polytype, is_open));
+    minima_list_.push_back(MakeUnique<LocalMinima>(&vert, polytype, is_open));
   }
 
   void ReuseableDataContainer64::AddPaths(const Paths64& paths,
@@ -745,7 +751,6 @@ namespace Clipper2Lib {
   void ReuseableDataContainer64::Clear()
   {
     minima_list_.clear();
-    for (auto v : vertex_lists_) delete[] v;
     vertex_lists_.clear();
   }
 
@@ -771,7 +776,7 @@ namespace Clipper2Lib {
   void ClipperBase::CleanUp()
   {
     DeleteEdges(actives_);
-    scanline_list_ = std::priority_queue<int64_t>();
+    scanline_list_ = std::priority_queue<int64_t, std::vector<int64_t, Allocator<int64_t>>>();
     intersect_nodes_.clear();
     DisposeAllOutRecs();
     horz_seg_list_.clear();
@@ -857,7 +862,7 @@ namespace Clipper2Lib {
     LocalMinimaList::const_iterator i;
     for (i = reuseable_data.minima_list_.cbegin(); i != reuseable_data.minima_list_.cend(); ++i)
     {
-      minima_list_.push_back(std::make_unique <LocalMinima>((*i)->vertex, (*i)->polytype, (*i)->is_open));
+      minima_list_.push_back(MakeUnique<LocalMinima>((*i)->vertex, (*i)->polytype, (*i)->is_open));
       if ((*i)->is_open) has_open_paths_ = true;
     }
   }
@@ -899,7 +904,6 @@ namespace Clipper2Lib {
   void ClipperBase::DisposeVerticesAndLocalMinima()
   {
     minima_list_.clear();
-    for (auto v : vertex_lists_) delete[] v;
     vertex_lists_.clear();
   }
 
@@ -910,7 +914,7 @@ namespace Clipper2Lib {
     if ((VertexFlags::LocalMin & vert.flags) != VertexFlags::None) return;
 
     vert.flags = (vert.flags | VertexFlags::LocalMin);
-    minima_list_.push_back(std::make_unique <LocalMinima>(&vert, polytype, is_open));
+    minima_list_.push_back(MakeUnique<LocalMinima>(&vert, polytype, is_open));
   }
 
   bool ClipperBase::IsContributingClosed(const Active& e) const
@@ -1214,7 +1218,7 @@ namespace Clipper2Lib {
       }
       else
       {
-        left_bound = new Active();
+        left_bound = New<Active>();
         left_bound->bot = local_minima->vertex->pt;
         left_bound->curr_x = left_bound->bot.x;
         left_bound->wind_dx = -1;
@@ -1230,7 +1234,7 @@ namespace Clipper2Lib {
       }
       else
       {
-        right_bound = new Active();
+        right_bound = New<Active>();
         right_bound->bot = local_minima->vertex->pt;
         right_bound->curr_x = right_bound->bot.x;
         right_bound->wind_dx = 1;
@@ -1375,7 +1379,7 @@ namespace Clipper2Lib {
       }
     }
 
-    OutPt* op = new OutPt(pt, outrec);
+    OutPt* op = New<OutPt>(pt, outrec);
     outrec->pts = op;
     return op;
   }
@@ -1486,7 +1490,7 @@ namespace Clipper2Lib {
 
   OutRec* ClipperBase::NewOutRec()
   {
-    OutRec* result = new OutRec();
+    OutRec* result = New<OutRec>();
     result->idx = outrec_list_.size();
     outrec_list_.push_back(result);
     result->pts = nullptr;
@@ -1517,7 +1521,7 @@ namespace Clipper2Lib {
     else if (pt == op_back->pt)
       return op_back;
 
-    new_op = new OutPt(pt, outrec);
+    new_op = New<OutPt>(pt, outrec);
     op_back->prev = new_op;
     new_op->prev = op_front;
     new_op->next = op_back;
@@ -1599,7 +1603,7 @@ namespace Clipper2Lib {
     }
     else
     {
-      OutPt* newOp2 = new OutPt(ip, prevOp->outrec);
+      OutPt* newOp2 = New<OutPt>(ip, prevOp->outrec);
       newOp2->prev = prevOp;
       newOp2->next = nextNextOp;
       nextNextOp->prev = newOp2;
@@ -1619,7 +1623,7 @@ namespace Clipper2Lib {
 
       splitOp->outrec = newOr;
       splitOp->next->outrec = newOr;
-      OutPt* newOp = new OutPt(ip, newOr);
+      OutPt* newOp = New<OutPt>(ip, newOr);
       newOp->prev = splitOp->next;
       newOp->next = splitOp;
       newOr->pts = newOp;
@@ -1630,12 +1634,12 @@ namespace Clipper2Lib {
       {
         if (Path1InsidePath2(prevOp, newOp))
         {
-          newOr->splits = new OutRecList();
+          newOr->splits = New<OutRecList>();
           newOr->splits->push_back(outrec);
         }
         else
         {
-          if (!outrec->splits) outrec->splits = new OutRecList();
+          if (!outrec->splits) outrec->splits = New<OutRecList>();
           outrec->splits->push_back(newOr);
         }
       }
@@ -1702,7 +1706,7 @@ namespace Clipper2Lib {
 
     e.outrec = outrec;
 
-    OutPt* op = new OutPt(pt, outrec);
+    OutPt* op = New<OutPt>(pt, outrec);
     outrec->pts = op;
     return op;
   }
@@ -2261,7 +2265,7 @@ namespace Clipper2Lib {
   void MoveSplits(OutRec* fromOr, OutRec* toOr)
   {
     if (!fromOr->splits) return;
-    if (!toOr->splits) toOr->splits = new OutRecList();
+    if (!toOr->splits) toOr->splits = New<OutRecList>();
     OutRecList::iterator orIter = fromOr->splits->begin();
     for (; orIter != fromOr->splits->end(); ++orIter)
       toOr->splits->push_back(*orIter);
@@ -2316,7 +2320,7 @@ namespace Clipper2Lib {
           else
             or2->owner = or1->owner;
 
-          if (!or1->splits) or1->splits = new OutRecList();
+          if (!or1->splits) or1->splits = New<OutRecList>();
           or1->splits->push_back(or2);
         }
         else

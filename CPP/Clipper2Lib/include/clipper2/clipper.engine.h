@@ -18,6 +18,7 @@
 #include <functional>
 #include <numeric>
 #include <memory>
+#include <utility>
 
 #include "clipper2/clipper.core.h"
 
@@ -78,7 +79,7 @@ namespace Clipper2Lib {
 	using PolyTreeD = PolyPathD;
 
 	struct OutRec;
-	typedef std::vector<OutRec*> OutRecList;
+	typedef std::vector<OutRec*, Allocator<OutRec*>> OutRecList;
 
 	//OutRec: contains a path in the clipping solution. Edges in the AEL will
 	//have OutRec pointers assigned when they form part of the clipping solution.
@@ -96,7 +97,7 @@ namespace Clipper2Lib {
 		bool is_open = false;
 
 		~OutRec() {
-			if (splits) delete splits;
+			if (splits) Delete(splits);
 			// nb: don't delete the split pointers
 			// as these are owned by ClipperBase's outrec_list_
 		};
@@ -174,10 +175,22 @@ namespace Clipper2Lib {
 		const PointD& e2bot, const PointD& e2top, PointD& pt)> ZCallbackD;
 #endif
 
-	typedef std::vector<HorzSegment> HorzSegmentList;
-	typedef std::unique_ptr<LocalMinima> LocalMinima_ptr;
-	typedef std::vector<LocalMinima_ptr> LocalMinimaList;
-	typedef std::vector<IntersectNode> IntersectNodeList;
+	typedef std::vector<HorzSegment, Allocator<HorzSegment>> HorzSegmentList;
+	typedef UniquePtr<LocalMinima> LocalMinima_ptr;
+	typedef std::vector<LocalMinima_ptr, Allocator<LocalMinima_ptr>> LocalMinimaList;
+	typedef std::vector<IntersectNode, Allocator<IntersectNode>> IntersectNodeList;
+
+	struct VertexList {
+		Vertex* list;
+		size_t cnt;
+		explicit VertexList(size_t cnt) : list(NewArray<Vertex>(cnt)), cnt(cnt) { }
+		explicit VertexList(const VertexList& other) = delete;
+		explicit VertexList(VertexList&& other) : list(std::exchange(other.list, nullptr)), cnt(std::exchange(other.cnt, 0)) { }
+		VertexList& operator=(const VertexList& other) = delete;
+		VertexList& operator=(VertexList&& other) { std::swap(list, other.list); std::swap(cnt, other.cnt); return *this; }
+		~VertexList() { DeleteArray(list, cnt); }
+	};
+	typedef std::vector<VertexList, Allocator<VertexList>> VertexLists;
 
 	// ReuseableDataContainer64 ------------------------------------------------
 
@@ -185,7 +198,7 @@ namespace Clipper2Lib {
 	private:
 		friend class ClipperBase;
 		LocalMinimaList minima_list_;
-		std::vector<Vertex*> vertex_lists_;
+		VertexLists vertex_lists_;
 		void AddLocMin(Vertex& vert, PathType polytype, bool is_open);
 	public:
 		virtual ~ReuseableDataContainer64();
@@ -207,11 +220,11 @@ namespace Clipper2Lib {
 		Active *sel_ = nullptr;
 		LocalMinimaList minima_list_;		//pointers in case of memory reallocs
 		LocalMinimaList::iterator current_locmin_iter_;
-		std::vector<Vertex*> vertex_lists_;
-		std::priority_queue<int64_t> scanline_list_;
+		VertexLists vertex_lists_;
+		std::priority_queue<int64_t, std::vector<int64_t, Allocator<int64_t>>> scanline_list_;
 		IntersectNodeList intersect_nodes_;
     HorzSegmentList horz_seg_list_;
-		std::vector<HorzJoin> horz_join_list_;
+		std::vector<HorzJoin, Allocator<HorzJoin>> horz_join_list_;
 		void Reset();
 		inline void InsertScanline(int64_t y);
 		inline bool PopScanline(int64_t &y);
@@ -334,8 +347,8 @@ namespace Clipper2Lib {
 		}
 	};
 
-	typedef typename std::vector<std::unique_ptr<PolyPath64>> PolyPath64List;
-	typedef typename std::vector<std::unique_ptr<PolyPathD>>  PolyPathDList;
+	typedef typename std::vector<UniquePtr<PolyPath64>, Allocator<UniquePtr<PolyPath64>>> PolyPath64List;
+	typedef typename std::vector<UniquePtr<PolyPathD>, Allocator<UniquePtr<PolyPathD>>>   PolyPathDList;
 
 	class PolyPath64 : public PolyPath {
 	private:
@@ -351,7 +364,7 @@ namespace Clipper2Lib {
 
 		PolyPath64* operator [] (size_t index) const
 		{
-			return childs_[index].get(); //std::unique_ptr
+			return childs_[index].get(); //UniquePtr
 		}
 
 		PolyPath64* Child(size_t index) const
@@ -364,7 +377,7 @@ namespace Clipper2Lib {
 
 		PolyPath64* AddChild(const Path64& path) override
 		{
-			return childs_.emplace_back(std::make_unique<PolyPath64>(this, path)).get();
+			return childs_.emplace_back(MakeUnique<PolyPath64>(this, path)).get();
 		}
 
 		void Clear() override
@@ -434,12 +447,12 @@ namespace Clipper2Lib {
 
 		PolyPathD* AddChild(const Path64& path) override
 		{
-			return childs_.emplace_back(std::make_unique<PolyPathD>(this, path)).get();
+			return childs_.emplace_back(MakeUnique<PolyPathD>(this, path)).get();
 		}
 
 		PolyPathD* AddChild(const PathD& path)
 		{
-			return childs_.emplace_back(std::make_unique<PolyPathD>(this, path)).get();
+			return childs_.emplace_back(MakeUnique<PolyPathD>(this, path)).get();
 		}
 
 		void Clear() override

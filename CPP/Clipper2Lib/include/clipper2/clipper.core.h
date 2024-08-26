@@ -21,6 +21,7 @@
 #include <numeric>
 #include <optional>
 #include "clipper2/clipper.version.h"
+#include "clipper2/clipper.allocator.h"
 
 namespace Clipper2Lib
 {
@@ -244,14 +245,14 @@ namespace Clipper2Lib
   using PointD = Point<double>;
 
   template <typename T>
-  using Path = std::vector<Point<T>>;
+  using Path = std::vector<Point<T>, Allocator<Point<T>>>;
   template <typename T>
-  using Paths = std::vector<Path<T>>;
+  using Paths = std::vector<Path<T>, Allocator<Path<T>>>;
 
   using Path64 = Path<int64_t>;
   using PathD = Path<double>;
-  using Paths64 = std::vector< Path64>;
-  using PathsD = std::vector< PathD>;
+  using Paths64 = std::vector<Path64, Allocator<Path64>>;
+  using PathsD = std::vector<PathD, Allocator<PathD>>;
 
   static const Point64 InvalidPoint64 = Point64(
     (std::numeric_limits<int64_t>::max)(),
